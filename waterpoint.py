@@ -50,6 +50,7 @@ class Connection(object):
 
     def buffer_in_cb(self, data, buffer, input_data):
         self.send(input_data)
+        weechat.prnt(buffer, "> " + input_data)
         self.output(buffer)
         return weechat.WEECHAT_RC_OK
 
