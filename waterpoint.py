@@ -26,7 +26,7 @@ class Connection(object):
     def send(self, line):
         self.s.sendall(line + "\r\n")
 
-    def readlines_nb(self):
+    def _recv_nb(self):
         """Immediately return a list of strings - may be empty"""
         try:
             lines = self.s.recv(8192).split('\r\n')
@@ -44,6 +44,14 @@ class Connection(object):
             raise
         return []
 
+    def readlines_nb(self):
+        """empty recv() buffer b/c SSLSocket does it poorly"""
+        lines, newlines = [], self._recv_nb()
+        while newlines:
+            lines += newlines
+            newlines = self._recv_nb()
+        return lines
+
     def close(self, *ignored):
         self.s.close()
         return weechat.WEECHAT_RC_OK
@@ -51,11 +59,8 @@ class Connection(object):
     close_cb = close
 
     def output(self, buffer):
-        lines = self.readlines_nb()
-        while lines:
-            for line in lines:
-                weechat.prnt(buffer, line.strip())
-            lines = self.readlines_nb()
+        for line in self.readlines_nb():
+            weechat.prnt(buffer, line.strip())
 
     def output_cb(self, data, remaining_calls):
         self.output(data)
