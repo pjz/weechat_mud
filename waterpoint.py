@@ -15,12 +15,8 @@ class Connection(object):
             self.s = SSL.wrap_socket(sock, ssl_version=SSL.PROTOCOL_TLS)
         else:
             self.s = sock
+        self.s.connect(connect_args)
         self.s.setblocking(False) # set non-blocking
-        try:
-            self.s.connect(connect_args)
-        except socket.error as e:
-            if e.errno != 115:
-                raise
         self.leftovers = ''
 
     def send(self, line):
