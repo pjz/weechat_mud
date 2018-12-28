@@ -1,4 +1,4 @@
-import ssl as SSL
+import ssl as ssl
 import socket
 import weechat
 
@@ -9,13 +9,17 @@ SERVER = ('waterpoint.moo.mud.org', 8302)
 class Connection(object):
 
     def __init__(self, connect_args, ssl=True):
-        self.use_ssl = ssl
+        self.connect_args = connect_args
+        self.ssl = ssl
+        self.connect()
+
+    def connect(self):
         sock = socket.socket()
-        if ssl:
-            self.s = SSL.wrap_socket(sock, ssl_version=SSL.PROTOCOL_TLS)
+        if self.ssl:
+            self.s = ssl.wrap_socket(sock, ssl_version=ssl.PROTOCOL_TLS)
         else:
             self.s = sock
-        self.s.connect(connect_args)
+        self.s.connect(self.connect_args)
         self.s.setblocking(False) # set non-blocking
         self.leftovers = ''
 
@@ -32,8 +36,12 @@ class Connection(object):
                 lines[0] = self.leftovers
                 self.leftovers = lines.pop()
                 return lines
-        except IOError:
+        except ssl.SSLWantReadError:
             pass
+        except socket.error as e:
+            if e.errno == 9: # Bad FD: disconnected
+                pass
+            raise
         return []
 
     def close(self, *ignored):
