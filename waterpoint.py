@@ -13,12 +13,14 @@ class Connection(object):
         sock = socket.socket()
         if ssl:
             self.s = SSL.wrap_socket(sock, ssl_version=SSL.PROTOCOL_TLS)
-            self._recv = lambda : self.s.recv(8192).split('\r\n')
         else:
             self.s = sock
-            self._recv = lambda : self.s.recv(8192, socket.MSG_DONTWAIT).split('\r\n')
-        self.s.connect(connect_args)
-        self.s.setblocking(0) # set non-blocking
+        self.s.setblocking(False) # set non-blocking
+        try:
+            self.s.connect(connect_args)
+        except socket.error as e:
+            if e.errno != 115:
+                raise
         self.leftovers = ''
 
     def send(self, line):
@@ -27,7 +29,7 @@ class Connection(object):
     def readlines_nb(self):
         """Immediately return a list of strings - may be empty"""
         try:
-            lines = self._recv()
+            lines = self.s.recv(8192).split('\r\n')
             if lines:
                 self.leftovers += lines[0]
             if len(lines) > 1:
@@ -45,10 +47,11 @@ class Connection(object):
     close_cb = close
 
     def output(self, buffer):
-        for line in self.readlines_nb():
-            weechat.prnt(buffer, line.strip())
-            #if "[to you]:" in line:
-            #    level += irssi.MSGLEVEL_MSGS + irssi.MSGLEVL_HILIGHT
+        lines = self.readlines_nb()
+        while lines:
+            for line in lines:
+                weechat.prnt(buffer, line.strip())
+            lines = self.readlines_nb()
 
     def output_cb(self, data, remaining_calls):
         self.output(data)
