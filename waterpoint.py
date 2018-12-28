@@ -1,14 +1,22 @@
+import ssl as SSL
 import socket
 import weechat
 
-weechat.register("waterpoint", "pj@place.org", "1.0", "GPL3", "connect to waterpoint", "CONNECTION_close", "")
+weechat.register("waterpoint", "pj@place.org", "2.0", "GPL3", "connect to waterpoint", "CONNECTION_close", "")
 
-SERVER = ('waterpoint.moo.mud.org', 8301)
+SERVER = ('waterpoint.moo.mud.org', 8302)
 
 class Connection(object):
 
-    def __init__(self, connect_args):
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def __init__(self, connect_args, ssl=True):
+        self.use_ssl = ssl
+        sock = socket.socket()
+        if ssl:
+            self.s = SSL.wrap_socket(sock, ssl_version=SSL.PROTOCOL_TLS)
+            self._recv = lambda : self.s.recv(8192).split('\r\n')
+        else:
+            self.s = sock
+            self._recv = lambda : self.s.recv(8192, socket.MSG_DONTWAIT).split('\r\n')
         self.s.connect(connect_args)
         self.s.setblocking(0) # set non-blocking
         self.leftovers = ''
@@ -19,7 +27,7 @@ class Connection(object):
     def readlines_nb(self):
         """Immediately return a list of strings - may be empty"""
         try:
-            lines = self.s.recv(8192, socket.MSG_DONTWAIT).split('\r\n')
+            lines = self._recv()
             if lines:
                 self.leftovers += lines[0]
             if len(lines) > 1:
@@ -34,9 +42,7 @@ class Connection(object):
         self.s.close()
         return weechat.WEECHAT_RC_OK
 
-    def close_cb(self, *ignored):
-        self.close()
-        return weechat.WEECHAT_RC_OK
+    close_cb = close
 
     def output(self, buffer):
         for line in self.readlines_nb():
@@ -57,12 +63,12 @@ class Connection(object):
 
 CONNECTION = Connection(SERVER)
 
-CONNECTION_close = CONNECTION.close
+CONNECTION_close_cb = CONNECTION.close_cb
 
 buffer_in_cb = CONNECTION.buffer_in_cb
 
 # create buffer
-buffer = weechat.buffer_new("waterpoint", "buffer_in_cb", "", "CONNECTION_close", "")
+buffer = weechat.buffer_new("waterpoint", "buffer_in_cb", "", "CONNECTION_close_cb", "")
 
 # set title
 weechat.buffer_set(buffer, "waterpoint", "Waterpoint")
