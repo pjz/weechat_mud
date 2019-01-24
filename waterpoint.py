@@ -1,4 +1,5 @@
-import ssl as ssl
+import ssl
+import errno
 import socket
 import weechat
 
@@ -24,7 +25,11 @@ class Connection(object):
         self.leftovers = ''
 
     def send(self, line):
-        self.s.sendall(line + "\r\n")
+        try:
+            self.s.sendall(line + "\r\n")
+        except IOError:
+            if not self.is_closed():
+                raise
 
     def _recv_nb(self):
         """Immediately return a list of strings - may be empty"""
@@ -56,11 +61,23 @@ class Connection(object):
         self.s.close()
         return weechat.WEECHAT_RC_OK
 
+    def is_closed(self):
+        try:
+            return self.s.fileno() == -1
+        except socket.error as e:
+            if e.errno == errno.EBADF: # Bad FD
+                return True
+            raise
+
     close_cb = close
 
     def output(self, buffer):
-        for line in self.readlines_nb():
-            weechat.prnt(buffer, line.strip())
+        try:
+            for line in self.readlines_nb():
+                weechat.prnt(buffer, line.strip())
+        except IOError:
+            if not self.is_closed():
+                raise
 
     def output_cb(self, data, remaining_calls):
         self.output(data)
