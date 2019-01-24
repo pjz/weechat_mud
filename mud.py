@@ -1,5 +1,4 @@
 import ssl
-import time
 import errno
 import socket
 import string
@@ -9,6 +8,7 @@ weechat.register("mud.py", "pj@place.org", "2.1", "GPL3", "connect to muds", "sh
 
 WEE_OK = weechat.WEECHAT_RC_OK
 WEE_ERROR = weechat.WEECHAT_RC_ERROR
+
 
 class Connection(object):
 
@@ -33,7 +33,7 @@ class Connection(object):
                      }
         val = mudcfg_get("muds.%s.%s" % (self.name, part))
         casted = part_type[part](val)
-        weechat.prnt('', "Loaded muds.%s.%s and got %r" % (self.name, part, casted))
+        if DEBUG: weechat.prnt('', "Loaded muds.%s.%s and got %r" % (self.name, part, casted))
         return casted
 
     def connect(self):
@@ -47,6 +47,9 @@ class Connection(object):
         self.s.connect(self.connect_args)
         self.s.setblocking(False) # set non-blocking
         self.leftovers = ''
+        cmd = self.mudcfg('cmd')
+        if cmd:
+            self.send(cmd)
 
     def send(self, line):
         try:
@@ -110,6 +113,20 @@ class Connection(object):
             if not self.is_closed():
                 raise
 
+    def first_connect(self):
+        # connect before calling output_cb
+        self.connect()
+        # call output every 500ms
+        weechat.hook_timer(500, 0, 0, "output_cb", self.name)
+
+    def reconnect(self, buffer):
+        if not self.is_closed():
+            weechat.prnt(buffer, "%s is still connected." % self.name)
+        else:
+            self.connect()
+        return WEE_OK
+
+
 
 def mudname(name):
     return ''.join([c for c in name if c in string.letters + string.digits ])
@@ -119,13 +136,13 @@ def mud_exists(name):
     name = mudname(name)
     return mudcfg_is_set("muds.%s.host" % name)
 
-CFG_PREFIX = "mud.py."
-
+MUDCFG_PREFIX = "plugins.var.python.mud.py."
 mudcfg_is_set = lambda *a: weechat.config_is_set_plugin(*a)
-mudcfg_get = lambda name: weechat.config_get("plugins.var.python.mud.py." + name)
+mudcfg_get = lambda name: weechat.config_get(MUDCFG_PREFIX + name)
 mudcfg_set = lambda *a: weechat.config_set_plugin(*a)
 mudcfg_unset = lambda *a: weechat.config_unset_plugin(*a)
 
+DEBUG = weechat.config_string(mudcfg_get("debug")) == "on"
 
 MUDS = {}
 
@@ -177,30 +194,20 @@ def mud_command_cb(data, buffer, args):
 
     elif args[0] in ('c', 'connect'):
         # connect to specified mud
-        if len(args) < 2:
+        name = mudname(args[1]) if len(args) > 1 else ''
+        if not name:
             prnt("/mud connect requires a mud name to connect to")
-            return WEE_OK
-        name = mudname(args[1])
-        if not mud_exists(name):
+            return WEE_ERROR
+        elif not mud_exists(name):
             prnt("%s is not a mud name I know about. Try /mud add <name> <host> <port> [cmd]" % name)
-            return WEE_OK
-        if name in MUDS:
-            mud = MUDS[name]
-            if not mud.is_closed():
-                prnt("%s is still connected." % name)
-                return WEE_OK
-            mud.connect()
-            mud.send('')
-            return WEE_OK
-
-       # add to running muds
-        MUDS[name] = mud = Connection(name)
-        # connect to the mud before calling output_cb on it
-        mud.connect()
-        mud.send('')
-        # call output every 500ms
-        weechat.hook_timer(500, 0, 0, "output_cb", name)
-        # TODO: send mudconfg('cmd')
+            return WEE_ERROR
+        elif name in MUDS:
+            MUDS[name].reconnect()
+        else:
+           # add to running muds
+            MUDS[name] = mud = Connection(name)
+            mud.first_connect()
+        return WEE_OK
 
     elif args[0] in ('dc', 'disconnect'):
         # disconnect from specified mud, or current-buffer if unspecified
@@ -208,10 +215,10 @@ def mud_command_cb(data, buffer, args):
             name = args[1]
         else:
             name = weechat.buffer_get(buffer, "name")
-        if name not in MUDS:
+        mud = MUDS.get(name)
+        if mud is None:
             prnt("No mud named '%s' was found." % name)
             return WEE_ERROR
-        mud = MUDS[name]
         if not mud.is_connected():
             prnt("%s is already disconnected.")
             return WEE_ERROR
@@ -224,8 +231,8 @@ def mud_command_cb(data, buffer, args):
             prnt("/mud add command requires at least <name> <host> <port>")
             return WEE_ERROR
         name, host, port = args[1:4]
-        ssl = args[5:6] == '-ssl'
-        i = 6 if ssl else 5
+        ssl = args[4:5] == '-ssl'
+        i = 5 if ssl else 4
         cmd = ' '.join(args[i:])
 
         mudcfg_set("muds.%s.host" % name, host)
