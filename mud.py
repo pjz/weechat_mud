@@ -127,9 +127,16 @@ class Connection(object):
         return WEE_OK
 
 
+def validletters():
+    try:
+        return string.letters + string.digits
+    except:
+        return string.ascii_letters + string.digits
+
+PRINTABLES = validletters()
 
 def mudname(name):
-    return ''.join([c for c in name if c in string.letters + string.digits ])
+    return ''.join([c for c in name if c in PRINTABLES ])
 
 
 def mud_exists(name):
