@@ -31,14 +31,15 @@ class Connection(object):
                      'cmd': weechat.config_string,
                      'ssl': lambda x: weechat.config_string(x) == "on"
                      }
-        val = mudcfg_get("muds.%s.%s" % (self.name, part))
+        fullname = f'muds.{self.name}.{part}'
+        val = mudcfg_get(fullname)
         casted = part_type[part](val)
-        if DEBUG: weechat.prnt('', "Loaded muds.%s.%s and got %r" % (self.name, part, casted))
+        if DEBUG: weechat.prnt('', f"Loaded {fullname} and got {casted!r}")
         return casted
 
     def connect(self):
         ca = self.connect_args
-        weechat.prnt(self.buffer, "Connecting to %s at %s:%s%s" % (self.name, ca[0], ca[1], ' with ssl' if self.ssl else ''))
+        weechat.prnt(self.buffer, f"Connecting to {self.name} at {ca[0]}:{ca[1]}{' with ssl' if self.ssl else ''}")
         sock = socket.socket()
         if self.ssl:
             self.s = ssl.wrap_socket(sock, ssl_version=ssl.PROTOCOL_TLS)
@@ -46,14 +47,14 @@ class Connection(object):
             self.s = sock
         self.s.connect(self.connect_args)
         self.s.setblocking(False) # set non-blocking
-        self.leftovers = ''
+        self.leftovers = b''
         cmd = self.mudcfg('cmd')
         if cmd:
             self.send(cmd)
 
     def send(self, line):
         try:
-            self.s.sendall(line + "\r\n")
+            self.s.sendall(f"{line}\r\n".encode())
         except IOError:
             if not self.is_closed():
                 raise
@@ -61,13 +62,13 @@ class Connection(object):
     def _recv_nb(self):
         """Immediately return a list of strings - may be empty"""
         try:
-            lines = self.s.recv(8192).split('\r\n')
+            lines = self.s.recv(8192).split(b'\r\n')
             if lines:
                 self.leftovers += lines[0]
             if len(lines) > 1:
                 lines[0] = self.leftovers
                 self.leftovers = lines.pop()
-                return lines
+                return [line.decode() for line in lines]
         except ssl.SSLWantReadError:
             pass
         except socket.error as e:
@@ -121,7 +122,7 @@ class Connection(object):
 
     def reconnect(self, buffer):
         if not self.is_closed():
-            weechat.prnt(buffer, "%s is still connected." % self.name)
+            weechat.prnt(buffer, "{self.name} is still connected.")
         else:
             self.connect()
         return WEE_OK
@@ -141,7 +142,7 @@ def mudname(name):
 
 def mud_exists(name):
     name = mudname(name)
-    return mudcfg_is_set("muds.%s.host" % name)
+    return mudcfg_is_set(f"muds.{name}.host")
 
 MUDCFG_PREFIX = "plugins.var.python.mud.py."
 mudcfg_is_set = lambda *a: weechat.config_is_set_plugin(*a)
@@ -206,10 +207,10 @@ def mud_command_cb(data, buffer, args):
             prnt("/mud connect requires a mud name to connect to")
             return WEE_ERROR
         elif not mud_exists(name):
-            prnt("%s is not a mud name I know about. Try /mud add <name> <host> <port> [cmd]" % name)
+            prnt(f"{name} is not a mud name I know about. Try /mud add <name> <host> <port> [cmd]")
             return WEE_ERROR
         elif name in MUDS:
-            MUDS[name].reconnect()
+            MUDS[name].reconnect(buffer)
         else:
            # add to running muds
             MUDS[name] = mud = Connection(name)
@@ -224,10 +225,10 @@ def mud_command_cb(data, buffer, args):
             name = weechat.buffer_get(buffer, "name")
         mud = MUDS.get(name)
         if mud is None:
-            prnt("No mud named '%s' was found." % name)
+            prnt(f"No mud named '{name}' was found.")
             return WEE_ERROR
         if not mud.is_connected():
-            prnt("%s is already disconnected.")
+            prnt(f"{name} is already disconnected.")
             return WEE_ERROR
         mud.disconnect()
 
@@ -242,15 +243,15 @@ def mud_command_cb(data, buffer, args):
         i = 5 if ssl else 4
         cmd = ' '.join(args[i:])
 
-        mudcfg_set("muds.%s.host" % name, host)
-        mudcfg_set("muds.%s.port" % name, port)
-        mudcfg_set("muds.%s.ssl" % name, "on" if ssl else "off")
-        success_msg = "Added %s at %s:%s" % (name, host, port)
+        mudcfg_set(f"muds.{name}.host", host)
+        mudcfg_set(f"muds.{name}.port", port)
+        mudcfg_set(f"muds.{name}.ssl", "on" if ssl else "off")
+        success_msg = f"Added {name} at {host}:{port}"
         if ssl:
             success_msg += " (ssl)"
         if cmd:
-            mudcfg_set("muds.%s.cmd" % name, cmd)
-            success_msg += " with login command: '%s'" % cmd
+            mudcfg_set(f"muds.{name}.cmd", cmd)
+            success_msg += f" with login command: '{cmd}'"
         prnt(success_msg)
 
     elif args[0] in ('del', 'rm'):
@@ -262,10 +263,8 @@ def mud_command_cb(data, buffer, args):
             prnt("No mud named %s exists." % name)
             return WEE_ERROR
         # del the mud spec into the config area
-        mudcfg_unset("muds.%s.host" % name)
-        mudcfg_unset("muds.%s.port" % name)
-        mudcfg_unset("muds.%s.cmd" % name)
-        mudcfg_unset("muds.%s.ssl" % name)
+        for part in ('host', 'port', 'cmd', 'ssl'):
+            mudcfg_unset(f"muds.{name}.{part}")
         prnt("Removed mud named %s." % name)
 
     return WEE_OK
