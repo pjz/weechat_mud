@@ -16,14 +16,8 @@ class Connection(object):
         self.name = mudname(name)
         self.buffer = weechat.buffer_new(name, "buffer_in_cb", name, "close_cb", name)
         weechat.buffer_set(self.buffer, "title", name)
-
-    @property
-    def connect_args(self):
-        return (self.mudcfg('host'), self.mudcfg('port'))
-
-    @property
-    def ssl(self):
-        return self.mudcfg('ssl')
+        # leftover input
+        self.leftovers = b''
 
     def mudcfg(self, part):
         part_type = {'host': weechat.config_string,
@@ -37,15 +31,37 @@ class Connection(object):
         if DEBUG: weechat.prnt('', f"Loaded {fullname} and got {casted!r}")
         return casted
 
+    @property
+    def ssl(self):
+        return self.mudcfg('ssl')
+
+    @property
+    def host(self):
+        return self.mudcfg('host')
+
+    @property
+    def port(self):
+        return self.mudcfg('port')
+
+    def _connect_with_cert(self, sock):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        return context.wrap_socket(sock, server_hostname=self.host)
+
+    def _connect_no_cert(self, sock):
+        context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        context.check_hostname = False
+        context.verify_mode = ssl.CERT_NONE
+        return context.wrap_socket(sock, server_hostname=self.host)
+
     def connect(self):
-        ca = self.connect_args
-        weechat.prnt(self.buffer, f"Connecting to {self.name} at {ca[0]}:{ca[1]}{' with ssl' if self.ssl else ''}")
+        weechat.prnt(self.buffer, f"Connecting to {self.name} at {self.host}:{self.port}{' with ssl' if self.ssl else ''}")
         sock = socket.socket()
         if self.ssl:
-            self.s = ssl.wrap_socket(sock, ssl_version=ssl.PROTOCOL_TLS)
+            #self.s = self._connect_with_cert(sock)
+            self.s = self._connect_no_cert(sock)
         else:
             self.s = sock
-        self.s.connect(self.connect_args)
+        self.s.connect((self.host, self.port))
         self.s.setblocking(False) # set non-blocking
         self.leftovers = b''
         cmd = self.mudcfg('cmd')
