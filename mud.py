@@ -166,6 +166,22 @@ mudcfg_get = lambda name: weechat.config_get(MUDCFG_PREFIX + name)
 mudcfg_set = lambda *a: weechat.config_set_plugin(*a)
 mudcfg_unset = lambda *a: weechat.config_unset_plugin(*a)
 
+def mudcfg_keys_under(prefix):
+    # Use infolist to get all plugin vars for your script
+    infolist = weechat.infolist_get("option", "", "*")
+    retval = dict()
+    full_prefix = MUDCFG_PREFIX + prefix
+    while weechat.infolist_next(infolist):
+        #weechat.prnt("", f"DEBUG: infolist fields {weechat.infolist_fields(infolist)}")
+        full_name = weechat.infolist_string(infolist, "full_name")
+        if full_name.startswith(full_prefix):
+            value = weechat.infolist_string(infolist, "value")
+            short_name = full_name[len(full_prefix)+1:]
+            retval[short_name] = value
+    weechat.infolist_free(infolist)
+    return retval
+
+
 DEBUG = weechat.config_string(mudcfg_get("debug")) == "on"
 
 MUDS = {}
@@ -215,6 +231,7 @@ def mud_command_cb(data, buffer, args):
         prnt("/mud disconnect [name]")
         prnt("/mud add <name> <host> <port> [cmd]")
         prnt("/mud del [name]")
+        prnt("/mud list")
 
     elif args[0] in ('c', 'connect'):
         # connect to specified mud
@@ -282,6 +299,19 @@ def mud_command_cb(data, buffer, args):
         for part in ('host', 'port', 'cmd', 'ssl'):
             mudcfg_unset(f"muds.{name}.{part}")
         prnt("Removed mud named %s." % name)
+    elif args[0] in ('list', 'ls'):
+        prnt("Known muds:")
+        muds = {}
+        for key, val in mudcfg_keys_under('muds').items():
+            name, part = key.split('.', 1)
+            if name not in muds:
+                muds[name] = {}
+            muds[name][part] = val
+
+        for name, parts in muds.items():
+            ssl = parts['ssl'] == 'on'
+            prnt(f"  {name:20}: {parts['host']}:{parts['port']} {'with' if ssl else 'without'} ssl ; cmd = {parts['cmd']}")
+
 
     return WEE_OK
 

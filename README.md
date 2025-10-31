@@ -15,5 +15,6 @@ A multi-mud script for weechat
     * _port_ - the muds' port
     * _cmd_ - a command to run after connecting to the mud
   * /mud <del|rm> _mud_name_ - remove the specified mud
+  * /mud <list|ls> - list known mud names and their configurations
 
 
